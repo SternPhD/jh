@@ -48,19 +48,20 @@ export function MainMenu({ context, navigate, refreshContext }: MainMenuProps) {
   }, [context.linkedTicketId, context.workspace, context.workspaceName]);
 
   const menuItems: MenuItem[] = [
-    { label: 'Create a new ticket', view: 'new-ticket', show: true },
-    { label: 'My tickets', view: 'my-tickets', show: true },
-    { label: 'Switch branch', view: 'switch-branch', show: context.isGitRepo },
-    {
-      label: 'Create PR for current branch',
-      view: 'create-pr',
-      show: context.isGitRepo && !!context.linkedTicketId,
-    },
+    // Show update ticket status first when on a branch with a linked ticket
     {
       label: 'Update ticket status',
       view: 'update-ticket-status',
       show: !!context.linkedTicketId,
     },
+    {
+      label: 'Create PR for current branch',
+      view: 'create-pr',
+      show: context.isGitRepo && !!context.linkedTicketId,
+    },
+    { label: 'Create a new ticket', view: 'new-ticket', show: true },
+    { label: 'My tickets', view: 'my-tickets', show: true },
+    { label: 'Switch branch', view: 'switch-branch', show: context.isGitRepo },
     {
       label: 'Create ticket from current branch',
       view: 'create-ticket-from-branch',

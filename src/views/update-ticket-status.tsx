@@ -93,6 +93,36 @@ export function UpdateTicketStatus({ context, navigate }: UpdateTicketStatusProp
     }
   };
 
+  const reloadTransitions = async () => {
+    if (!client || !context.linkedTicketId) {
+      navigate('main');
+      return;
+    }
+
+    setStep('loading');
+    setSelectedIndex(0);
+
+    try {
+      // Refresh ticket to get new status
+      const ticketData = await client.getIssue(context.linkedTicketId);
+      if (ticketData) {
+        setTicket(ticketData);
+      }
+
+      // Refresh transitions
+      const availableTransitions = await client.getAvailableTransitions(context.linkedTicketId);
+      if (availableTransitions.length === 0) {
+        // No more transitions available, go back to menu
+        navigate('main');
+        return;
+      }
+      setTransitions(availableTransitions);
+      setStep('select');
+    } catch {
+      navigate('main');
+    }
+  };
+
   useInput((input, key) => {
     if (step === 'select') {
       if (key.escape) {
@@ -110,7 +140,18 @@ export function UpdateTicketStatus({ context, navigate }: UpdateTicketStatusProp
       }
     }
 
-    if (step === 'done' || step === 'error') {
+    if (step === 'done') {
+      if (key.escape) {
+        navigate('main');
+        return;
+      }
+      if (key.return || key.tab) {
+        // Allow another transition
+        reloadTransitions();
+      }
+    }
+
+    if (step === 'error') {
       if (key.return || key.escape) {
         navigate('main');
       }
@@ -183,9 +224,12 @@ export function UpdateTicketStatus({ context, navigate }: UpdateTicketStatusProp
               `${ticket?.key}: ${ticket?.status} → ${newStatus}`,
             ]}
           />
-          <Box marginTop={1}>
-            <Text dimColor>Press Enter to continue...</Text>
-          </Box>
+          <KeyHints
+            hints={[
+              { key: 'Enter/Tab', action: 'Update again' },
+              { key: 'Esc', action: 'Back to menu' },
+            ]}
+          />
         </BorderedBox>
       );
 
