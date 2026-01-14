@@ -45,7 +45,7 @@ export class ConfigManager {
   private credentialsPath: string;
 
   constructor() {
-    this.configDir = path.join(os.homedir(), '.jh-cli');
+    this.configDir = path.join(os.homedir(), '.jh');
     this.configPath = path.join(this.configDir, 'config.yaml');
     this.credentialsPath = path.join(this.configDir, 'credentials.yaml');
   }

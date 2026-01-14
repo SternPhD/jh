@@ -1,5 +1,5 @@
 {
-  "name": "jh-cli",
+  "name": "jh",
   "version": "0.1.0",
   "description": "CLI tool to integrate GitHub and Jira workflows with a TUI",
   "type": "module",

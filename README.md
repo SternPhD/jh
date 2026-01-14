@@ -34,7 +34,7 @@ gh auth login
 
 1. Go to https://id.atlassian.com/manage-profile/security/api-tokens
 2. Click "Create API token"
-3. Give it a name (e.g., "jh-cli")
+3. Give it a name (e.g., "jh")
 4. Copy the token - you'll need it during setup
 
 ## Installation
