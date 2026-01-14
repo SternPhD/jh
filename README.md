@@ -1,4 +1,4 @@
-# jh - Jira x GitHub CLI
+# jh - Jira x GitHub Tool
 
 A terminal UI (TUI) tool that integrates Jira and GitHub workflows, making it easy to manage tickets and pull requests from the command line.
 
@@ -42,7 +42,7 @@ gh auth login
 ### 1. Clone and build
 
 ```bash
-cd /path/to/internal-tools/jh-cli
+cd /path/to/jh
 bun install
 bun run build
 ```
@@ -123,7 +123,7 @@ bun run lint
 Make sure you ran `bun link` or `npm link` after building. You may need to restart your terminal or run:
 
 ```bash
-source ~/.bashrc  # or ~/.zshrc
+source ~/.zshrc  # or ~/.bashrc
 ```
 
 ### GitHub CLI not authenticated
