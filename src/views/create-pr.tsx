@@ -47,6 +47,7 @@ export function CreatePR({ context, navigate, refreshContext }: CreatePRProps) {
 
   // Created PR
   const [prUrl, setPrUrl] = useState('');
+  const [doneIndex, setDoneIndex] = useState(0);
 
   // Load data on mount
   useEffect(() => {
@@ -249,7 +250,24 @@ export function CreatePR({ context, navigate, refreshContext }: CreatePRProps) {
       }
     }
 
-    if (step === 'done' || step === 'error') {
+    if (step === 'done') {
+      if (key.escape) {
+        navigate('main');
+        return;
+      }
+      if (key.upArrow || key.downArrow) {
+        setDoneIndex((prev) => (prev === 0 ? 1 : 0));
+      }
+      if (key.return) {
+        if (doneIndex === 0) {
+          navigate('update-ticket-status');
+        } else {
+          navigate('main');
+        }
+      }
+    }
+
+    if (step === 'error') {
       if (key.return || key.escape) {
         navigate('main');
       }
@@ -425,9 +443,26 @@ export function CreatePR({ context, navigate, refreshContext }: CreatePRProps) {
               `Linked to: ${ticket?.key}`,
             ]}
           />
-          <Box marginTop={1}>
-            <Text dimColor>Press Enter to continue...</Text>
+          <Box marginTop={1} flexDirection="column">
+            <Box marginBottom={1}>
+              <Text>What would you like to do next?</Text>
+            </Box>
+            {['Update ticket status', 'Back to menu'].map((label, index) => (
+              <Box key={label}>
+                <Text color={index === doneIndex ? 'cyan' : undefined}>
+                  {index === doneIndex ? '→ ' : '  '}
+                  {label}
+                </Text>
+              </Box>
+            ))}
           </Box>
+          <KeyHints
+            hints={[
+              { key: '↑↓', action: 'Navigate' },
+              { key: 'Enter', action: 'Select' },
+              { key: 'Esc', action: 'Back' },
+            ]}
+          />
         </BorderedBox>
       );
 

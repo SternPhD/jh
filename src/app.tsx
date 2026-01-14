@@ -12,6 +12,7 @@ import { LinkBranch } from './views/link-branch.js';
 import { Settings } from './views/settings.js';
 import { CreateTicketFromBranch } from './views/create-ticket-from-branch.js';
 import { CreatePR } from './views/create-pr.js';
+import { UpdateTicketStatus } from './views/update-ticket-status.js';
 
 export type ViewName =
   | 'loading'
@@ -24,7 +25,8 @@ export type ViewName =
   | 'link-branch'
   | 'settings'
   | 'create-ticket-from-branch'
-  | 'create-pr';
+  | 'create-pr'
+  | 'update-ticket-status';
 
 interface AppState {
   currentView: ViewName;
@@ -134,6 +136,8 @@ export function App() {
       return <CreateTicketFromBranch {...viewProps} />;
     case 'create-pr':
       return <CreatePR {...viewProps} />;
+    case 'update-ticket-status':
+      return <UpdateTicketStatus {...viewProps} />;
     default:
       return <MainMenu {...viewProps} />;
   }

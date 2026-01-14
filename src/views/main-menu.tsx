@@ -57,6 +57,11 @@ export function MainMenu({ context, navigate, refreshContext }: MainMenuProps) {
       show: context.isGitRepo && !!context.linkedTicketId,
     },
     {
+      label: 'Update ticket status',
+      view: 'update-ticket-status',
+      show: !!context.linkedTicketId,
+    },
+    {
       label: 'Create ticket from current branch',
       view: 'create-ticket-from-branch',
       show: context.isGitRepo && !context.linkedTicketId && context.currentBranch !== 'main' && context.currentBranch !== 'master',
