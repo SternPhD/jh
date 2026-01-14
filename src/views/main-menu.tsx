@@ -52,6 +52,11 @@ export function MainMenu({ context, navigate, refreshContext }: MainMenuProps) {
     { label: 'My tickets', view: 'my-tickets', show: true },
     { label: 'Switch branch', view: 'switch-branch', show: context.isGitRepo },
     {
+      label: 'Create PR for current branch',
+      view: 'create-pr',
+      show: context.isGitRepo && !!context.linkedTicketId,
+    },
+    {
       label: 'Create ticket from current branch',
       view: 'create-ticket-from-branch',
       show: context.isGitRepo && !context.linkedTicketId && context.currentBranch !== 'main' && context.currentBranch !== 'master',

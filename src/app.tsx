@@ -11,6 +11,7 @@ import { SwitchBranch } from './views/switch-branch.js';
 import { LinkBranch } from './views/link-branch.js';
 import { Settings } from './views/settings.js';
 import { CreateTicketFromBranch } from './views/create-ticket-from-branch.js';
+import { CreatePR } from './views/create-pr.js';
 
 export type ViewName =
   | 'loading'
@@ -22,7 +23,8 @@ export type ViewName =
   | 'switch-branch'
   | 'link-branch'
   | 'settings'
-  | 'create-ticket-from-branch';
+  | 'create-ticket-from-branch'
+  | 'create-pr';
 
 interface AppState {
   currentView: ViewName;
@@ -130,6 +132,8 @@ export function App() {
       return <Settings {...viewProps} onSetupComplete={onSetupComplete} />;
     case 'create-ticket-from-branch':
       return <CreateTicketFromBranch {...viewProps} />;
+    case 'create-pr':
+      return <CreatePR {...viewProps} />;
     default:
       return <MainMenu {...viewProps} />;
   }
