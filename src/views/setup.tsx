@@ -111,7 +111,7 @@ export function Setup({ onComplete }: SetupProps) {
   switch (step) {
     case 'welcome':
       return (
-        <BorderedBox title="Welcome to jh-cli!">
+        <BorderedBox title="Welcome to jh!">
           <Text>Let's get you set up with Jira integration.</Text>
           <Box marginTop={1}>
             <Text dimColor>Press Enter to continue...</Text>
@@ -212,7 +212,7 @@ export function Setup({ onComplete }: SetupProps) {
             messages={[
               'Connected to Jira successfully!',
               `Default project: ${selectedProject}`,
-              `Configuration saved to ~/.jh-cli/config.yaml`,
+              `Configuration saved to ~/.jh/config.yaml`,
             ]}
           />
           <Box marginTop={1}>
