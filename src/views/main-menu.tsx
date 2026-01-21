@@ -1,10 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { Box, Text, useInput } from 'ink';
+import { exec } from 'child_process';
+import { promisify } from 'util';
 import { StatusBox, KeyHints } from '../components/index.js';
 import type { AppContext } from '../services/context.js';
 import type { ViewName } from '../app.js';
 import { JiraClient, type JiraIssue } from '../clients/jira.js';
 import { ConfigManager } from '../services/config.js';
+import { openInBrowser, getJiraIssueUrl } from '../utils/browser.js';
+
+const execAsync = promisify(exec);
 
 interface MainMenuProps {
   context: AppContext;
@@ -14,13 +19,15 @@ interface MainMenuProps {
 
 interface MenuItem {
   label: string;
-  view: ViewName;
+  view?: ViewName;
+  action?: () => void;
   show: boolean;
 }
 
 export function MainMenu({ context, navigate, refreshContext }: MainMenuProps) {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [linkedTicket, setLinkedTicket] = useState<JiraIssue | null>(null);
+  const [prUrl, setPrUrl] = useState<string | null>(null);
 
   // Fetch linked ticket details if we have a ticket ID
   useEffect(() => {
@@ -47,6 +54,49 @@ export function MainMenu({ context, navigate, refreshContext }: MainMenuProps) {
     fetchTicket();
   }, [context.linkedTicketId, context.workspace, context.workspaceName]);
 
+  // Fetch PR URL for current branch
+  useEffect(() => {
+    async function fetchPrUrl() {
+      if (!context.currentBranch || context.currentBranch === 'main' || context.currentBranch === 'master') {
+        setPrUrl(null);
+        return;
+      }
+
+      try {
+        const { stdout } = await execAsync(`gh pr view --json url -q .url 2>/dev/null`);
+        const url = stdout.trim();
+        if (url && url.startsWith('http')) {
+          setPrUrl(url);
+        } else {
+          setPrUrl(null);
+        }
+      } catch {
+        setPrUrl(null);
+      }
+    }
+
+    fetchPrUrl();
+  }, [context.currentBranch]);
+
+  const handleOpenJira = async () => {
+    if (!context.linkedTicketId || !context.workspace) return;
+    const url = getJiraIssueUrl(context.workspace.domain, context.linkedTicketId);
+    try {
+      await openInBrowser(url);
+    } catch {
+      // Silently fail
+    }
+  };
+
+  const handleOpenPr = async () => {
+    if (!prUrl) return;
+    try {
+      await openInBrowser(prUrl);
+    } catch {
+      // Silently fail
+    }
+  };
+
   const menuItems: MenuItem[] = [
     // Show update ticket status first when on a branch with a linked ticket
     {
@@ -55,9 +105,19 @@ export function MainMenu({ context, navigate, refreshContext }: MainMenuProps) {
       show: !!context.linkedTicketId,
     },
     {
+      label: 'Open Jira ticket in browser',
+      action: handleOpenJira,
+      show: !!context.linkedTicketId,
+    },
+    {
+      label: 'Open PR in browser',
+      action: handleOpenPr,
+      show: !!prUrl,
+    },
+    {
       label: 'Create PR for current branch',
       view: 'create-pr',
-      show: context.isGitRepo && !!context.linkedTicketId,
+      show: context.isGitRepo && !!context.linkedTicketId && !prUrl,
     },
     { label: 'Create a new ticket', view: 'new-ticket', show: true },
     { label: 'My tickets', view: 'my-tickets', show: true },
@@ -77,6 +137,14 @@ export function MainMenu({ context, navigate, refreshContext }: MainMenuProps) {
 
   const visibleItems = menuItems.filter((item) => item.show);
 
+  const handleSelect = (item: MenuItem) => {
+    if (item.action) {
+      item.action();
+    } else if (item.view) {
+      navigate(item.view);
+    }
+  };
+
   useInput((input, key) => {
     if (key.upArrow) {
       setSelectedIndex((prev) =>
@@ -91,13 +159,13 @@ export function MainMenu({ context, navigate, refreshContext }: MainMenuProps) {
     }
 
     if (key.return) {
-      navigate(visibleItems[selectedIndex].view);
+      handleSelect(visibleItems[selectedIndex]);
     }
 
     // Number shortcuts
     const num = parseInt(input, 10);
     if (num >= 1 && num <= visibleItems.length) {
-      navigate(visibleItems[num - 1].view);
+      handleSelect(visibleItems[num - 1]);
     }
   });
 
@@ -123,7 +191,7 @@ export function MainMenu({ context, navigate, refreshContext }: MainMenuProps) {
       {/* Menu Items */}
       <Box flexDirection="column" marginTop={1}>
         {visibleItems.map((item, index) => (
-          <Box key={item.view}>
+          <Box key={item.label}>
             <Text color={index === selectedIndex ? 'cyan' : undefined}>
               {index === selectedIndex ? '→ ' : '  '}
               {item.label}

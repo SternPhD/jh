@@ -87,7 +87,7 @@ export class JiraClient {
     try {
       const response = await this.client.get(`/issue/${ticketId}`, {
         params: {
-          fields: 'summary,status,issuetype,description,assignee,customfield_10020',
+          fields: 'summary,status,issuetype,description,assignee,customfield_10021',
         },
       });
 
@@ -99,7 +99,7 @@ export class JiraClient {
         issueType: fields.issuetype?.name || 'Unknown',
         description: this.extractTextFromAdf(fields.description),
         assignee: fields.assignee?.displayName,
-        sprint: fields.customfield_10020?.[0]?.name,
+        sprint: fields.customfield_10021?.[0]?.name,
       };
     } catch (error) {
       if ((error as AxiosError).response?.status === 404) {
@@ -134,7 +134,7 @@ export class JiraClient {
       const response = await this.client.post('/search/jql', {
         jql: jql + ' ORDER BY updated DESC',
         maxResults: params.maxResults || 50,
-        fields: ['summary', 'status', 'issuetype', 'assignee', 'customfield_10020'],
+        fields: ['summary', 'status', 'issuetype', 'assignee', 'customfield_10021'],
       });
 
       return response.data.issues.map((issue: any) => ({
@@ -143,7 +143,7 @@ export class JiraClient {
         status: issue.fields.status?.name || 'Unknown',
         issueType: issue.fields.issuetype?.name || 'Unknown',
         assignee: issue.fields.assignee?.displayName,
-        sprint: issue.fields.customfield_10020?.[0]?.name,
+        sprint: issue.fields.customfield_10021?.[0]?.name,
       }));
     } catch (error) {
       throw this.handleApiError(error as AxiosError);
@@ -164,7 +164,7 @@ export class JiraClient {
       const response = await this.client.post('/search/jql', {
         jql: `"Parent" = ${parentKey} OR "Epic Link" = ${parentKey} ORDER BY status ASC, updated DESC`,
         maxResults: 100,
-        fields: ['summary', 'status', 'issuetype', 'assignee', 'customfield_10020'],
+        fields: ['summary', 'status', 'issuetype', 'assignee', 'customfield_10021'],
       });
 
       return response.data.issues.map((issue: any) => ({
@@ -173,7 +173,7 @@ export class JiraClient {
         status: issue.fields.status?.name || 'Unknown',
         issueType: issue.fields.issuetype?.name || 'Unknown',
         assignee: issue.fields.assignee?.displayName,
-        sprint: issue.fields.customfield_10020?.[0]?.name,
+        sprint: issue.fields.customfield_10021?.[0]?.name,
       }));
     } catch (error) {
       // If the query fails (e.g., no Epic Link field), return empty array
@@ -200,20 +200,24 @@ export class JiraClient {
 
   async getActiveSprints(projectKey: string): Promise<JiraSprint[]> {
     try {
-      // First get boards for the project
+      // First get boards for the project (with timeout to prevent hanging)
       const boardsResponse = await this.client.get('/rest/agile/1.0/board', {
         baseURL: this.client.defaults.baseURL?.replace('/rest/api/3', ''),
         params: { projectKeyOrId: projectKey },
+        timeout: 10000, // 10 second timeout
       });
 
       const boards = boardsResponse.data.values || [];
       if (boards.length === 0) return [];
 
-      // Get sprints from the first board
-      const boardId = boards[0].id;
+      // Prefer scrum boards since they support sprints (kanban boards don't)
+      const scrumBoard = boards.find((b: any) => b.type === 'scrum');
+      const boardId = scrumBoard?.id || boards[0].id;
+
       const sprintsResponse = await this.client.get(`/rest/agile/1.0/board/${boardId}/sprint`, {
         baseURL: this.client.defaults.baseURL?.replace('/rest/api/3', ''),
         params: { state: 'active,future' },
+        timeout: 10000, // 10 second timeout
       });
 
       return (sprintsResponse.data.values || []).map((sprint: any) => ({
@@ -222,7 +226,7 @@ export class JiraClient {
         state: sprint.state,
       }));
     } catch {
-      // Agile API might not be available
+      // Agile API might not be available or timed out
       return [];
     }
   }

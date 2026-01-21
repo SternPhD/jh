@@ -16,7 +16,7 @@ interface MyTicketsProps {
 }
 
 type ViewStep = 'loading' | 'list' | 'detail' | 'loading-children' | 'children' | 'child-detail' | 'creating-branch' | 'error';
-type Filter = 'active' | 'todo' | 'in-progress' | 'done' | 'all';
+type Filter = 'sprint' | 'active' | 'todo' | 'in-progress' | 'done' | 'all';
 
 export function MyTickets({ context, navigate, refreshContext }: MyTicketsProps) {
   const [step, setStep] = useState<ViewStep>('loading');
@@ -26,6 +26,8 @@ export function MyTickets({ context, navigate, refreshContext }: MyTicketsProps)
   const [childIssues, setChildIssues] = useState<JiraIssue[]>([]);
   const [selectedChildTicket, setSelectedChildTicket] = useState<JiraIssue | null>(null);
   const [filter, setFilter] = useState<Filter>('active');
+  const [activeSprintNames, setActiveSprintNames] = useState<string[]>([]);
+  const [sprintLoaded, setSprintLoaded] = useState(false);
   const [error, setError] = useState('');
   const [detailIndex, setDetailIndex] = useState(0);
   const [childDetailIndex, setChildDetailIndex] = useState(0);
@@ -65,7 +67,7 @@ export function MyTickets({ context, navigate, refreshContext }: MyTicketsProps)
         );
         jiraClientRef.current = client;
 
-        // Get all my tickets
+        // Get all my tickets first (don't block on sprint loading)
         const myTickets = await client.searchIssues({
           assignee: 'currentUser',
           project: context.workspace.defaultProject,
@@ -75,6 +77,18 @@ export function MyTickets({ context, navigate, refreshContext }: MyTicketsProps)
         setTickets(sortedTickets);
         setFilteredTickets(sortedTickets);
         setStep('list');
+
+        // Load active sprints in background (non-blocking)
+        client.getActiveSprints(context.workspace.defaultProject).then((sprints) => {
+          const activeSprints = sprints.filter((s) => s.state === 'active');
+          if (activeSprints.length > 0) {
+            setActiveSprintNames(activeSprints.map((s) => s.name));
+            setFilter('sprint'); // Switch to sprint filter once loaded
+          }
+          setSprintLoaded(true);
+        }).catch(() => {
+          setSprintLoaded(true); // Mark as loaded even on error
+        });
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load tickets');
         setStep('error');
@@ -92,13 +106,26 @@ export function MyTickets({ context, navigate, refreshContext }: MyTicketsProps)
     if (filter === 'all') {
       // Show everything including done
       filtered = tickets;
+    } else if (filter === 'sprint') {
+      // Show tickets in any active sprint (and not done)
+      if (activeSprintNames.length > 0) {
+        filtered = tickets.filter((t) =>
+          t.sprint && activeSprintNames.includes(t.sprint) &&
+          !doneStatuses.some((s) => t.status.toLowerCase().includes(s))
+        );
+      } else {
+        // No active sprints, fall back to showing active tickets
+        filtered = tickets.filter((t) =>
+          !doneStatuses.some((s) => t.status.toLowerCase().includes(s))
+        );
+      }
     } else if (filter === 'active') {
       // Show everything except done/closed/resolved
       filtered = tickets.filter((t) =>
         !doneStatuses.some((s) => t.status.toLowerCase().includes(s))
       );
     } else {
-      const statusMap: Record<Exclude<Filter, 'all' | 'active'>, string[]> = {
+      const statusMap: Record<Exclude<Filter, 'all' | 'active' | 'sprint'>, string[]> = {
         todo: ['To Do', 'Open', 'Reopened'],
         'in-progress': ['In Progress'],
         done: ['Done', 'Closed', 'Resolved'],
@@ -111,7 +138,7 @@ export function MyTickets({ context, navigate, refreshContext }: MyTicketsProps)
 
     // Sort filtered results
     setFilteredTickets(sortTicketsByKey(filtered));
-  }, [filter, tickets]);
+  }, [filter, tickets, activeSprintNames]);
 
   const handleTicketSelect = async (item: SelectItem<JiraIssue>) => {
     setSelectedTicket(item.value);
@@ -278,7 +305,7 @@ export function MyTickets({ context, navigate, refreshContext }: MyTicketsProps)
   useInput((input, key) => {
     if (step === 'list') {
       if (key.tab) {
-        const filters: Filter[] = ['active', 'todo', 'in-progress', 'done', 'all'];
+        const filters: Filter[] = ['sprint', 'active', 'todo', 'in-progress', 'done', 'all'];
         const currentIndex = filters.indexOf(filter);
         setFilter(filters[(currentIndex + 1) % filters.length]);
       }
@@ -442,8 +469,14 @@ export function MyTickets({ context, navigate, refreshContext }: MyTicketsProps)
             {/* Filter tabs */}
             <Box marginBottom={1}>
               <Text dimColor>Filter: </Text>
-              {(['active', 'todo', 'in-progress', 'done', 'all'] as Filter[]).map((f) => {
+              {(['sprint', 'active', 'todo', 'in-progress', 'done', 'all'] as Filter[]).map((f) => {
+                const getSprintLabel = () => {
+                  if (!sprintLoaded) return 'Sprint...';
+                  if (activeSprintNames.length > 0) return 'Sprint';
+                  return 'Sprint (none)';
+                };
                 const labels: Record<Filter, string> = {
+                  sprint: getSprintLabel(),
                   active: 'Active',
                   todo: 'To Do',
                   'in-progress': 'In Progress',
@@ -467,6 +500,7 @@ export function MyTickets({ context, navigate, refreshContext }: MyTicketsProps)
             <Box marginBottom={1}>
               <Text dimColor>
                 {filteredTickets.length} ticket{filteredTickets.length !== 1 ? 's' : ''}
+                {filter === 'sprint' && activeSprintNames.length > 0 && ` in ${activeSprintNames.length} active sprint${activeSprintNames.length !== 1 ? 's' : ''}`}
               </Text>
             </Box>
 
@@ -479,21 +513,27 @@ export function MyTickets({ context, navigate, refreshContext }: MyTicketsProps)
               onBack={() => navigate('main')}
               searchable={true}
               searchPlaceholder="Type to search..."
-              renderItem={(item, isSelected) => (
-                <Box>
-                  <Text color={isSelected ? 'cyan' : undefined}>
-                    {isSelected ? '→ ' : '  '}
-                  </Text>
-                  <Text color={isSelected ? 'cyan' : 'yellow'}>
-                    {item.value.key}
-                  </Text>
-                  <Text color={isSelected ? 'cyan' : undefined}>
-                    {'  '}{item.value.summary.substring(0, 60)}
-                    {item.value.summary.length > 60 ? '...' : ''}
-                  </Text>
-                  <Text dimColor> [{item.value.status}]</Text>
-                </Box>
-              )}
+              renderItem={(item, isSelected) => {
+                const summaryMaxLen = filter === 'sprint' && item.value.sprint ? 45 : 60;
+                return (
+                  <Box>
+                    <Text color={isSelected ? 'cyan' : undefined}>
+                      {isSelected ? '→ ' : '  '}
+                    </Text>
+                    <Text color={isSelected ? 'cyan' : 'yellow'}>
+                      {item.value.key}
+                    </Text>
+                    <Text color={isSelected ? 'cyan' : undefined}>
+                      {'  '}{item.value.summary.substring(0, summaryMaxLen)}
+                      {item.value.summary.length > summaryMaxLen ? '...' : ''}
+                    </Text>
+                    <Text dimColor> [{item.value.status}]</Text>
+                    {filter === 'sprint' && item.value.sprint && (
+                      <Text color="magenta"> {item.value.sprint.split(' - ')[0]}</Text>
+                    )}
+                  </Box>
+                );
+              }}
             />
           </Box>
           <KeyHints

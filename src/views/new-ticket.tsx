@@ -3,7 +3,7 @@ import { Box, Text, useInput } from 'ink';
 import { BorderedBox, SelectList, TextInput, KeyHints, Spinner, SuccessMessage, ErrorMessage, type SelectItem } from '../components/index.js';
 import type { AppContext } from '../services/context.js';
 import type { ViewName } from '../app.js';
-import { JiraClient, type IssueType, type JiraIssue } from '../clients/jira.js';
+import { JiraClient, type IssueType, type JiraIssue, type JiraSprint } from '../clients/jira.js';
 import { ConfigManager } from '../services/config.js';
 import { GitManager } from '../services/git.js';
 import { generateBranchName } from '../utils/slug.js';
@@ -14,7 +14,7 @@ interface NewTicketProps {
   refreshContext: () => Promise<void>;
 }
 
-type ViewStep = 'loading' | 'select-type' | 'enter-title' | 'enter-description' | 'confirm' | 'creating' | 'done' | 'error';
+type ViewStep = 'loading' | 'select-type' | 'enter-title' | 'enter-description' | 'select-sprint' | 'confirm' | 'creating' | 'done' | 'error';
 
 export function NewTicket({ context, navigate, refreshContext }: NewTicketProps) {
   const [step, setStep] = useState<ViewStep>('loading');
@@ -22,6 +22,9 @@ export function NewTicket({ context, navigate, refreshContext }: NewTicketProps)
   const [selectedType, setSelectedType] = useState<IssueType | null>(null);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
+  const [sprints, setSprints] = useState<JiraSprint[]>([]);
+  const [selectedSprintId, setSelectedSprintId] = useState<number | null>(null);
+  const [sprintIndex, setSprintIndex] = useState(0);
   const [createdTicket, setCreatedTicket] = useState<JiraIssue | null>(null);
   const [branchName, setBranchName] = useState('');
   const [error, setError] = useState('');
@@ -51,8 +54,15 @@ export function NewTicket({ context, navigate, refreshContext }: NewTicketProps)
           token
         );
 
-        const types = await client.getIssueTypes(context.workspace.defaultProject);
+        // Load issue types and sprints in parallel
+        const [types, activeSprints] = await Promise.all([
+          client.getIssueTypes(context.workspace.defaultProject),
+          client.getActiveSprints(context.workspace.defaultProject).catch(() => [] as JiraSprint[]),
+        ]);
+
         setIssueTypes(types);
+        setSprints(activeSprints);
+
         setStep('select-type');
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load issue types');
@@ -75,7 +85,18 @@ export function NewTicket({ context, navigate, refreshContext }: NewTicketProps)
   };
 
   const handleDescriptionSubmit = () => {
-    setStep('confirm');
+    // If there are active sprints, ask about adding to sprint
+    if (sprints.length > 0) {
+      // Default to first active sprint
+      const activeSprint = sprints.find((s) => s.state === 'active');
+      if (activeSprint) {
+        setSelectedSprintId(activeSprint.id);
+        setSprintIndex(0); // "Add to sprint" is the first option
+      }
+      setStep('select-sprint');
+    } else {
+      setStep('confirm');
+    }
   };
 
   const handleCreate = async (createBranch: boolean) => {
@@ -104,6 +125,7 @@ export function NewTicket({ context, navigate, refreshContext }: NewTicketProps)
         summary: title,
         issueType: selectedType.name,
         description: description || undefined,
+        sprintId: selectedSprintId || undefined,
       });
 
       setCreatedTicket(ticket);
@@ -127,11 +149,35 @@ export function NewTicket({ context, navigate, refreshContext }: NewTicketProps)
     }
   };
 
-  // Handle keyboard input for confirm step
+  // Handle keyboard input for sprint selection and confirm steps
   useInput((input, key) => {
-    if (step === 'confirm') {
+    if (step === 'select-sprint') {
       if (key.escape) {
         setStep('enter-description');
+        return;
+      }
+      if (key.upArrow || key.downArrow) {
+        setSprintIndex((prev) => (prev === 0 ? 1 : 0));
+      }
+      if (key.return) {
+        if (sprintIndex === 0) {
+          // Add to current sprint - selectedSprintId already set
+          setStep('confirm');
+        } else {
+          // Skip sprint
+          setSelectedSprintId(null);
+          setStep('confirm');
+        }
+      }
+    }
+
+    if (step === 'confirm') {
+      if (key.escape) {
+        if (sprints.length > 0) {
+          setStep('select-sprint');
+        } else {
+          setStep('enter-description');
+        }
         return;
       }
       if (key.upArrow || key.downArrow) {
@@ -143,7 +189,11 @@ export function NewTicket({ context, navigate, refreshContext }: NewTicketProps)
         } else if (confirmIndex === 1) {
           handleCreate(false);
         } else {
-          setStep('enter-description');
+          if (sprints.length > 0) {
+            setStep('select-sprint');
+          } else {
+            setStep('enter-description');
+          }
         }
       }
     }
@@ -243,7 +293,58 @@ export function NewTicket({ context, navigate, refreshContext }: NewTicketProps)
         </BorderedBox>
       );
 
-    case 'confirm':
+    case 'select-sprint': {
+      const activeSprint = sprints.find((s) => s.state === 'active');
+      return (
+        <BorderedBox title="Add to Sprint?">
+          <Box flexDirection="column">
+            <Box marginBottom={1}>
+              <Text dimColor>
+                Project: {context.workspace?.defaultProject} | Type: {selectedType?.name}
+              </Text>
+            </Box>
+            <Box marginBottom={1}>
+              <Text dimColor>
+                Title: {title}
+              </Text>
+            </Box>
+
+            {activeSprint && (
+              <Box marginBottom={1}>
+                <Text>Current sprint: </Text>
+                <Text color="yellow">{activeSprint.name}</Text>
+              </Box>
+            )}
+
+            <Box flexDirection="column" marginTop={1}>
+              {[
+                `Add to ${activeSprint?.name || 'current sprint'}`,
+                'Skip (no sprint)',
+              ].map((label, index) => (
+                <Box key={label}>
+                  <Text color={index === sprintIndex ? 'cyan' : undefined}>
+                    {index === sprintIndex ? '→ ' : '  '}
+                    {label}
+                  </Text>
+                </Box>
+              ))}
+            </Box>
+          </Box>
+          <KeyHints
+            hints={[
+              { key: '↑↓', action: 'Navigate' },
+              { key: 'Enter', action: 'Select' },
+              { key: 'Esc', action: 'Back' },
+            ]}
+          />
+        </BorderedBox>
+      );
+    }
+
+    case 'confirm': {
+      const sprintName = selectedSprintId
+        ? sprints.find((s) => s.id === selectedSprintId)?.name
+        : null;
       return (
         <BorderedBox title="Create Ticket?">
           <Box flexDirection="column">
@@ -263,6 +364,12 @@ export function NewTicket({ context, navigate, refreshContext }: NewTicketProps)
               <Box>
                 <Text dimColor>Description: </Text>
                 <Text>{description.substring(0, 50)}...</Text>
+              </Box>
+            )}
+            {sprintName && (
+              <Box>
+                <Text dimColor>Sprint: </Text>
+                <Text color="yellow">{sprintName}</Text>
               </Box>
             )}
 
@@ -288,6 +395,7 @@ export function NewTicket({ context, navigate, refreshContext }: NewTicketProps)
           />
         </BorderedBox>
       );
+    }
 
     case 'creating':
       return (
@@ -296,12 +404,16 @@ export function NewTicket({ context, navigate, refreshContext }: NewTicketProps)
         </BorderedBox>
       );
 
-    case 'done':
+    case 'done': {
+      const addedToSprint = selectedSprintId
+        ? sprints.find((s) => s.id === selectedSprintId)?.name
+        : null;
       return (
         <BorderedBox title="Success">
           <SuccessMessage
             messages={[
               `Created ticket: ${createdTicket?.key}`,
+              ...(addedToSprint ? [`Added to sprint: ${addedToSprint}`] : []),
               ...(branchName
                 ? [`Created branch: ${branchName}`, 'Checked out branch']
                 : []),
@@ -312,6 +424,7 @@ export function NewTicket({ context, navigate, refreshContext }: NewTicketProps)
           </Box>
         </BorderedBox>
       );
+    }
 
     case 'error':
       return (
