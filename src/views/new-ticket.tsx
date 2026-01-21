@@ -22,7 +22,8 @@ export function NewTicket({ context, navigate, refreshContext }: NewTicketProps)
   const [selectedType, setSelectedType] = useState<IssueType | null>(null);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [sprints, setSprints] = useState<JiraSprint[]>([]);
+  const [activeSprints, setActiveSprints] = useState<JiraSprint[]>([]);
+  const [linkedTicketSprintName, setLinkedTicketSprintName] = useState<string | null>(null);
   const [selectedSprintId, setSelectedSprintId] = useState<number | null>(null);
   const [sprintIndex, setSprintIndex] = useState(0);
   const [createdTicket, setCreatedTicket] = useState<JiraIssue | null>(null);
@@ -54,14 +55,30 @@ export function NewTicket({ context, navigate, refreshContext }: NewTicketProps)
           token
         );
 
-        // Load issue types and sprints in parallel
-        const [types, activeSprints] = await Promise.all([
+        // Load issue types, sprints, and linked ticket info in parallel
+        const [types, allSprints, linkedTicket] = await Promise.all([
           client.getIssueTypes(context.workspace.defaultProject),
           client.getActiveSprints(context.workspace.defaultProject).catch(() => [] as JiraSprint[]),
+          context.linkedTicketId ? client.getIssue(context.linkedTicketId).catch(() => null) : Promise.resolve(null),
         ]);
 
         setIssueTypes(types);
-        setSprints(activeSprints);
+
+        // Filter for active sprints only
+        const active = allSprints.filter((s) => s.state === 'active');
+
+        // If linked ticket has a sprint, store it and sort sprints so it's first
+        if (linkedTicket?.sprint) {
+          setLinkedTicketSprintName(linkedTicket.sprint);
+          // Sort so the linked ticket's sprint is first
+          active.sort((a, b) => {
+            if (a.name === linkedTicket.sprint) return -1;
+            if (b.name === linkedTicket.sprint) return 1;
+            return 0;
+          });
+        }
+
+        setActiveSprints(active);
 
         setStep('select-type');
       } catch (err) {
@@ -86,13 +103,10 @@ export function NewTicket({ context, navigate, refreshContext }: NewTicketProps)
 
   const handleDescriptionSubmit = () => {
     // If there are active sprints, ask about adding to sprint
-    if (sprints.length > 0) {
-      // Default to first active sprint
-      const activeSprint = sprints.find((s) => s.state === 'active');
-      if (activeSprint) {
-        setSelectedSprintId(activeSprint.id);
-        setSprintIndex(0); // "Add to sprint" is the first option
-      }
+    if (activeSprints.length > 0) {
+      // Default to first sprint (which is the linked ticket's sprint if available)
+      setSelectedSprintId(activeSprints[0].id);
+      setSprintIndex(0);
       setStep('select-sprint');
     } else {
       setStep('confirm');
@@ -156,12 +170,18 @@ export function NewTicket({ context, navigate, refreshContext }: NewTicketProps)
         setStep('enter-description');
         return;
       }
-      if (key.upArrow || key.downArrow) {
-        setSprintIndex((prev) => (prev === 0 ? 1 : 0));
+      // Options: all active sprints + "Skip (no sprint)"
+      const optionCount = activeSprints.length + 1;
+      if (key.upArrow) {
+        setSprintIndex((prev) => (prev === 0 ? optionCount - 1 : prev - 1));
+      }
+      if (key.downArrow) {
+        setSprintIndex((prev) => (prev === optionCount - 1 ? 0 : prev + 1));
       }
       if (key.return) {
-        if (sprintIndex === 0) {
-          // Add to current sprint - selectedSprintId already set
+        if (sprintIndex < activeSprints.length) {
+          // Selected a sprint
+          setSelectedSprintId(activeSprints[sprintIndex].id);
           setStep('confirm');
         } else {
           // Skip sprint
@@ -173,7 +193,7 @@ export function NewTicket({ context, navigate, refreshContext }: NewTicketProps)
 
     if (step === 'confirm') {
       if (key.escape) {
-        if (sprints.length > 0) {
+        if (activeSprints.length > 0) {
           setStep('select-sprint');
         } else {
           setStep('enter-description');
@@ -189,7 +209,7 @@ export function NewTicket({ context, navigate, refreshContext }: NewTicketProps)
         } else if (confirmIndex === 1) {
           handleCreate(false);
         } else {
-          if (sprints.length > 0) {
+          if (activeSprints.length > 0) {
             setStep('select-sprint');
           } else {
             setStep('enter-description');
@@ -294,7 +314,15 @@ export function NewTicket({ context, navigate, refreshContext }: NewTicketProps)
       );
 
     case 'select-sprint': {
-      const activeSprint = sprints.find((s) => s.state === 'active');
+      // Build sprint options: all active sprints + skip option
+      const sprintOptions = [
+        ...activeSprints.map((s) => ({
+          label: `Add to ${s.name}`,
+          isLinkedTicketSprint: s.name === linkedTicketSprintName,
+        })),
+        { label: 'Skip (no sprint)', isLinkedTicketSprint: false },
+      ];
+
       return (
         <BorderedBox title="Add to Sprint?">
           <Box flexDirection="column">
@@ -309,23 +337,22 @@ export function NewTicket({ context, navigate, refreshContext }: NewTicketProps)
               </Text>
             </Box>
 
-            {activeSprint && (
-              <Box marginBottom={1}>
-                <Text>Current sprint: </Text>
-                <Text color="yellow">{activeSprint.name}</Text>
-              </Box>
-            )}
+            <Box marginBottom={1}>
+              <Text dimColor>
+                {activeSprints.length} active sprint{activeSprints.length !== 1 ? 's' : ''} available
+              </Text>
+            </Box>
 
             <Box flexDirection="column" marginTop={1}>
-              {[
-                `Add to ${activeSprint?.name || 'current sprint'}`,
-                'Skip (no sprint)',
-              ].map((label, index) => (
-                <Box key={label}>
+              {sprintOptions.map((option, index) => (
+                <Box key={option.label}>
                   <Text color={index === sprintIndex ? 'cyan' : undefined}>
                     {index === sprintIndex ? '→ ' : '  '}
-                    {label}
+                    {option.label}
                   </Text>
+                  {option.isLinkedTicketSprint && (
+                    <Text color="green"> (current ticket's sprint)</Text>
+                  )}
                 </Box>
               ))}
             </Box>
@@ -343,7 +370,7 @@ export function NewTicket({ context, navigate, refreshContext }: NewTicketProps)
 
     case 'confirm': {
       const sprintName = selectedSprintId
-        ? sprints.find((s) => s.id === selectedSprintId)?.name
+        ? activeSprints.find((s) => s.id === selectedSprintId)?.name
         : null;
       return (
         <BorderedBox title="Create Ticket?">
@@ -406,7 +433,7 @@ export function NewTicket({ context, navigate, refreshContext }: NewTicketProps)
 
     case 'done': {
       const addedToSprint = selectedSprintId
-        ? sprints.find((s) => s.id === selectedSprintId)?.name
+        ? activeSprints.find((s) => s.id === selectedSprintId)?.name
         : null;
       return (
         <BorderedBox title="Success">
